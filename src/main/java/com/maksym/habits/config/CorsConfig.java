@@ -9,7 +9,13 @@ public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins("http://localhost:5173")
+                // Allow your production frontend + local dev
+                .allowedOrigins(
+                        "https://melodious-tenderness-production.up.railway.app",
+                        "http://localhost:5173"
+                )
+                // If you want to allow any *.up.railway.app, use allowedOriginPatterns instead:
+                // .allowedOriginPatterns("https://*.up.railway.app", "http://localhost:5173")
                 .allowedMethods("GET","POST","PUT","PATCH","DELETE","OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("Content-Disposition")
