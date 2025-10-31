@@ -378,25 +378,34 @@ public class DataController {
     }
 
     @PatchMapping(value = "/habits/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<java.util.Map<String,Object>> patchHabit(
+    public ResponseEntity<Map<String,Object>> patchHabit(
             @PathVariable("id") long id,
-            @org.springframework.web.bind.annotation.RequestBody com.fasterxml.jackson.databind.JsonNode body) throws Exception {
+            @RequestBody JsonNode body) throws Exception {
 
         String desc = body.hasNonNull("description") ? body.get("description").asText() : null;
+        String question = body.hasNonNull("question") ? body.get("question").asText() : null;
 
-        try (java.sql.Connection conn = dataSource.getConnection()) {
-            try (java.sql.Statement s = conn.createStatement()) { s.execute("PRAGMA busy_timeout=10000"); }
+        try (Connection conn = dataSource.getConnection()) {
+            try (Statement s = conn.createStatement()) { s.execute("PRAGMA busy_timeout=10000"); }
             if (desc != null) {
-                try (java.sql.PreparedStatement ps = conn.prepareStatement("UPDATE Habits SET description=? WHERE id=?")) {
+                try (PreparedStatement ps = conn.prepareStatement("UPDATE Habits SET description=? WHERE id=?")) {
                     ps.setString(1, desc);
                     ps.setLong(2, id);
                     ps.executeUpdate();
                 }
             }
+            if (question != null) {
+                try (PreparedStatement ps = conn.prepareStatement("UPDATE Habits SET question=? WHERE id=?")) {
+                    ps.setString(1, question);
+                    ps.setLong(2, id);
+                    ps.executeUpdate();
+                }
+            }
             // Return the updated row (or just echo)
-            java.util.Map<String,Object> out = new java.util.HashMap<>();
+            java.util.Map<String,Object> out = new HashMap<>();
             out.put("id", id);
             out.put("description", desc);
+            out.put("question", question);
             return ResponseEntity.ok(out);
         }
     }
