@@ -377,37 +377,61 @@ public class DataController {
         return ResponseEntity.ok(out);
     }
 
-    @PatchMapping(value = "/habits/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String,Object>> patchHabit(
+    @PatchMapping(
+            value = "/habits/{id}",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<Map<String, Object>> patchHabit(
             @PathVariable("id") long id,
-            @RequestBody JsonNode body) throws Exception {
+            @RequestBody JsonNode body
+    ) throws Exception {
 
-        String desc = body.hasNonNull("description") ? body.get("description").asText() : null;
-        String question = body.hasNonNull("question") ? body.get("question").asText() : null;
+        final boolean hasDesc = body.has("description") && !body.get("description").isNull();
+        final boolean hasQuestion = body.has("question") && !body.get("question").isNull();
+        final boolean hasArchived = body.has("archived") && !body.get("archived").isNull();
+
+        final String newDesc = hasDesc ? body.get("description").asText() : null;
+        final String newQuestion = hasQuestion ? body.get("question").asText() : null;
+        final Boolean newArchived = hasArchived ? body.get("archived").asBoolean() : null;
+
+        if (!hasDesc && !hasQuestion && !hasArchived) {
+            Map<String, Object> out = new HashMap<>();
+            out.put("id", id);
+            return ResponseEntity.ok(out);
+        }
 
         try (Connection conn = dataSource.getConnection()) {
             try (Statement s = conn.createStatement()) { s.execute("PRAGMA busy_timeout=10000"); }
-            if (desc != null) {
-                try (PreparedStatement ps = conn.prepareStatement("UPDATE Habits SET description=? WHERE id=?")) {
-                    ps.setString(1, desc);
-                    ps.setLong(2, id);
-                    ps.executeUpdate();
+
+            StringBuilder sql = new StringBuilder("UPDATE Habits SET ");
+            List<Object> params = new ArrayList<>();
+
+            if (hasDesc) { sql.append("description=?"); params.add(newDesc); }
+            if (hasQuestion) { if (params.size()>0) sql.append(", "); sql.append("question=?"); params.add(newQuestion); }
+            if (hasArchived) { if (params.size()>0) sql.append(", "); sql.append("archived=?"); params.add(newArchived ? 1 : 0); }
+            sql.append(" WHERE id=?");
+            params.add(id);
+
+            try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+                int i = 1;
+                for (Object p : params) {
+                    if (p instanceof String) ps.setString(i++, (String) p);
+                    else if (p instanceof Integer) ps.setInt(i++, (Integer) p);
+                    else if (p instanceof Long) ps.setLong(i++, (Long) p);
+                    else if (p instanceof Boolean) ps.setInt(i++, ((Boolean)p) ? 1 : 0);
+                    else throw new IllegalArgumentException("Unexpected param type: " + p);
                 }
+                ps.executeUpdate();
             }
-            if (question != null) {
-                try (PreparedStatement ps = conn.prepareStatement("UPDATE Habits SET question=? WHERE id=?")) {
-                    ps.setString(1, question);
-                    ps.setLong(2, id);
-                    ps.executeUpdate();
-                }
-            }
-            // Return the updated row (or just echo)
-            java.util.Map<String,Object> out = new HashMap<>();
-            out.put("id", id);
-            out.put("description", desc);
-            out.put("question", question);
-            return ResponseEntity.ok(out);
         }
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("id", id);
+        if (hasDesc) out.put("description", newDesc);
+        if (hasQuestion) out.put("question", newQuestion);
+        if (hasArchived) out.put("archived", newArchived);
+        return ResponseEntity.ok(out);
     }
 
     @PutMapping(value = "/habits/reorder", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -521,6 +545,36 @@ public class DataController {
     private static long toUtcMidnight(long epochMs) {
         final long MS_PER_DAY = 86_400_000L;
         return epochMs - Math.floorMod(epochMs, MS_PER_DAY);
+    }
+
+    @GetMapping(value = "/habits", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Map<String, Object>>> listHabits(
+            @RequestParam(name = "includeArchived", required = false, defaultValue = "false") boolean includeArchived
+    ) throws Exception {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection()) {
+            try (Statement s = conn.createStatement()) { s.execute("PRAGMA busy_timeout=10000"); }
+            String sql = "SELECT id, name, description, question, color, type, position, archived FROM Habits "
+                    + (includeArchived ? "" : "WHERE COALESCE(archived, 0) = 0 ")
+                    + "ORDER BY position ASC, id ASC";
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("id", rs.getLong("id"));
+                        row.put("name", rs.getString("name"));
+                        row.put("description", rs.getString("description"));
+                        row.put("question", rs.getString("question"));
+                        row.put("color", rs.getInt("color"));
+                        row.put("type", rs.getInt("type"));
+                        row.put("position", rs.getInt("position"));
+                        row.put("archived", rs.getInt("archived") == 1);
+                        out.add(row);
+                    }
+                }
+            }
+        }
+        return ResponseEntity.ok(out);
     }
 
 
